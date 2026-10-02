@@ -26,9 +26,20 @@ from pathlib import Path
 from typing import List
 
 BACKEND_DIR = str(Path(__file__).parent.resolve())
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 SCRIPTS_DIR = str(Path(sys.executable).parent.resolve())
 if SCRIPTS_DIR not in os.environ.get("PATH", ""):
     os.environ["PATH"] = SCRIPTS_DIR + os.pathsep + os.environ.get("PATH", "")
+
+def get_subprocess_env(extra: dict | None = None) -> dict:
+    env = dict(os.environ)
+    curr_pp = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = BACKEND_DIR + (os.pathsep + curr_pp if curr_pp else "")
+    if extra:
+        env.update(extra)
+    return env
 
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -188,7 +199,11 @@ def run_solver(state_str: str) -> str:
     Returns the solution string (space-joined WCA moves).
     """
     script = f"""
-import sys
+import sys, os
+from pathlib import Path
+backend_dir = r"{BACKEND_DIR}"
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 import logging
 logging.basicConfig(level=logging.WARNING)
 
@@ -213,6 +228,7 @@ sys.stdout.flush()
         text=True,
         timeout=600,  # 10 min – first run downloads tables
         cwd=BACKEND_DIR,
+        env=get_subprocess_env(),
     )
     if result.returncode != 0:
         stderr_tail = result.stderr[-2000:] if result.stderr else ""
@@ -235,8 +251,12 @@ def apply_move_to_state(state: List[str], move: str) -> List[str]:
     """
     # Pass move via environment variable to avoid quoting issues with
     # prime-move strings like "Rw'" inside f-string script source.
-    script = """
+    script = f"""
 import sys, json, os
+from pathlib import Path
+backend_dir = r"{BACKEND_DIR}"
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
 state_str = os.environ["CUBE_STATE"]
@@ -244,12 +264,11 @@ cube = RubiksCube444(state_str, "ULFRBD")
 cube.rotate(os.environ["CUBE_MOVE"])
 
 # cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
 result = [face_to_color[c] for c in cube.state[1:]]
 print(json.dumps(result))
 """
-    import os as _os
-    env = {**_os.environ, "CUBE_STATE": state_to_solver_string(state), "CUBE_MOVE": move}
+    env = get_subprocess_env({"CUBE_STATE": state_to_solver_string(state), "CUBE_MOVE": move})
     res = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True, text=True, timeout=30, env=env,
@@ -268,11 +287,14 @@ def apply_moves_verify(initial: List[str], moves: List[str]) -> bool:
     Uses a single subprocess call for efficiency.
     """
     import json as _json
-    import os as _os
     # Pass moves as JSON via environment variable – avoids quoting issues with
     # prime characters (e.g. "Rw'") when the list is embedded in script source.
-    script = """
+    script = f"""
 import sys, json, os
+from pathlib import Path
+backend_dir = r"{BACKEND_DIR}"
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
 state_str = os.environ["CUBE_STATE"]
@@ -282,16 +304,15 @@ for m in moves:
     cube.rotate(m)
 
 # cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
 result = [face_to_color[c] for c in cube.state[1:]]
 solved = ["W"]*16 + ["O"]*16 + ["G"]*16 + ["R"]*16 + ["B"]*16 + ["Y"]*16
 print(json.dumps(result == solved))
 """
-    env = {
-        **_os.environ,
+    env = get_subprocess_env({
         "CUBE_STATE": state_to_solver_string(initial),
         "CUBE_MOVES": _json.dumps(moves),
-    }
+    })
     res = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True, text=True, timeout=60, env=env,
@@ -307,11 +328,14 @@ print(json.dumps(result == solved))
 def apply_scramble(scramble: str) -> List[str]:
     """Apply a scramble string to a solved cube and return the resulting state."""
     import json as _json
-    import os as _os
     # Pass moves as JSON via environment variable – avoids quoting issues with
     # prime characters (e.g. "Rw'") when the list is embedded in script source.
-    script = """
+    script = f"""
 import sys, json, os
+from pathlib import Path
+backend_dir = r"{BACKEND_DIR}"
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
 state_str = os.environ["CUBE_STATE"]
@@ -321,15 +345,14 @@ for m in moves:
     cube.rotate(m)
 
 # cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
 result = [face_to_color[c] for c in cube.state[1:]]
 print(json.dumps(result))
 """
-    env = {
-        **_os.environ,
+    env = get_subprocess_env({
         "CUBE_STATE": state_to_solver_string(SOLVED_STATE),
         "CUBE_MOVES": _json.dumps(scramble.strip().split()),
-    }
+    })
     res = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True, text=True, timeout=30, env=env,
