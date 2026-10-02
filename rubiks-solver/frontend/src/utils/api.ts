@@ -1,6 +1,9 @@
 import type { SolveResponse, DemoResponse } from "../types/cube";
 
-const API = ""; // uses Vite proxy (same-origin /solve, /demo, /health)
+// In production on Vercel, requests to /api/* are rewritten to the backend service.
+// In local dev, Vite proxies /api/* to http://localhost:8000/api.
+// Can also be overridden with VITE_API_URL if connecting directly to an external backend.
+const API = import.meta.env.VITE_API_URL ?? "/api";
 
 export async function solveCube(stateArr: string[]): Promise<SolveResponse> {
   const res = await fetch(`${API}/solve`, {

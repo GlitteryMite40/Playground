@@ -30,7 +30,7 @@ SCRIPTS_DIR = str(Path(sys.executable).parent.resolve())
 if SCRIPTS_DIR not in os.environ.get("PATH", ""):
     os.environ["PATH"] = SCRIPTS_DIR + os.pathsep + os.environ.get("PATH", "")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -52,6 +52,8 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:4173",  # vite preview
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -340,12 +342,15 @@ print(json.dumps(result))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
-@app.get("/health")
+router = APIRouter()
+
+
+@router.get("/health")
 def health():
     return {"status": "ok"}
 
 
-@app.get("/demo", response_model=DemoResponse)
+@router.get("/demo", response_model=DemoResponse)
 def demo():
     """Return a scrambled cube state derived from a fixed 30-move scramble."""
     try:
@@ -356,7 +361,7 @@ def demo():
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.post("/solve", response_model=SolveResponse)
+@router.post("/solve", response_model=SolveResponse)
 def solve(req: SolveRequest):
     """
     Validate the cube state, solve it, verify the solution, and return it.
@@ -411,3 +416,8 @@ def solve(req: SolveRequest):
         moves=moves,
         message=f"Solved in {len(moves)} moves",
     )
+
+
+# Register routes at both "/api" (for Vercel service rewrite) and root "/" (for direct / local access)
+app.include_router(router, prefix="/api")
+app.include_router(router)
