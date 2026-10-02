@@ -1,0 +1,21 @@
+# Solver source clone (checked out locally but not part of the repo)
+rubiks-cube-NxNxN-solver/
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+
+# Binaries & lookup tables
+*.exe
+backend/lookup-tables/
+lookup-tables/
+

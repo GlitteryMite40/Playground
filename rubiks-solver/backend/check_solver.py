@@ -35,10 +35,14 @@ SOLVED_STRING = (
 
 
 def is_solved(cube) -> bool:
-    """Return True if every face of the cube is a single uniform colour."""
-    state = cube.state  # string or sequence of face-letter chars
-    for face_start in range(0, 96, 16):
-        face = state[face_start:face_start + 16]
+    """Return True if every face of the cube is a single uniform colour.
+
+    cube.state has a dummy 'x' at index 0 (97 entries total).
+    Real stickers are state[1:97], i.e. face i occupies state[1+i*16 : 1+(i+1)*16].
+    """
+    state = cube.state
+    for i in range(6):
+        face = state[1 + i * 16 : 1 + (i + 1) * 16]
         if len(set(face)) != 1:
             return False
     return True
@@ -84,6 +88,7 @@ def main() -> int:
         for move in SCRAMBLE:
             cube.rotate(move)
         assert not is_solved(cube), "Cube appears solved immediately after scramble – something is wrong"
+        scrambled_state_str = "".join(cube.state[1:])
     except Exception as exc:
         print("FAIL")
         print(f"\nERROR: {exc}")
@@ -94,9 +99,12 @@ def main() -> int:
     # ── Step 4: solve ─────────────────────────────────────────────────────────
     print("[4/5] Solving (may take a while on first run) …", flush=True)
     try:
-        cube.solve()
-        # cube.solution is a list of strings; filter out COMMENT entries
-        solution_moves = [m for m in cube.solution if not m.startswith("COMMENT")]
+        solve_cube = RubiksCube444(scrambled_state_str, "ULFRBD")
+        solve_cube.solve()
+        solution_moves = [
+            m for m in solve_cube.solution
+            if not m.startswith("COMMENT")
+        ]
         print(f"      Solution: {len(solution_moves)} moves")
         if solution_moves:
             preview = " ".join(solution_moves[:15])
@@ -126,13 +134,14 @@ def main() -> int:
         state = cube.state
         print("\nFinal cube state is NOT solved. Face dump:")
         for i, label in enumerate(face_labels):
-            face = state[i * 16:(i + 1) * 16]
+            # state[0] is the dummy 'x'; real stickers start at index 1
+            face = state[1 + i * 16 : 1 + (i + 1) * 16]
             print(f"  {label}: {''.join(face)}")
         return 1
 
     print("OK")
     print("\n" + "=" * 60)
-    print("PASS – scramble → solve → verify completed successfully.")
+    print("PASS - scramble -> solve -> verify completed successfully.")
     print("=" * 60)
     return 0
 

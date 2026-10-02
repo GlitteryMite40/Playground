@@ -18,10 +18,17 @@ State format (both request and response):
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import List
+
+BACKEND_DIR = str(Path(__file__).parent.resolve())
+SCRIPTS_DIR = str(Path(sys.executable).parent.resolve())
+if SCRIPTS_DIR not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = SCRIPTS_DIR + os.pathsep + os.environ.get("PATH", "")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -203,6 +210,7 @@ sys.stdout.flush()
         capture_output=True,
         text=True,
         timeout=600,  # 10 min – first run downloads tables
+        cwd=BACKEND_DIR,
     )
     if result.returncode != 0:
         stderr_tail = result.stderr[-2000:] if result.stderr else ""
@@ -223,22 +231,27 @@ def apply_move_to_state(state: List[str], move: str) -> List[str]:
     solver library's move application logic via subprocess.
     Returns the new state list.
     """
-    script = f"""
-import sys, json
+    # Pass move via environment variable to avoid quoting issues with
+    # prime-move strings like "Rw'" inside f-string script source.
+    script = """
+import sys, json, os
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
-state_str = "{state_to_solver_string(state)}"
+state_str = os.environ["CUBE_STATE"]
 cube = RubiksCube444(state_str, "ULFRBD")
-cube.rotate("{move}")
+cube.rotate(os.environ["CUBE_MOVE"])
 
-# Convert back: each char in cube.state is ULFRBD face id
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state]
+# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
+face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+result = [face_to_color[c] for c in cube.state[1:]]
 print(json.dumps(result))
 """
+    import os as _os
+    env = {**_os.environ, "CUBE_STATE": state_to_solver_string(state), "CUBE_MOVE": move}
     res = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=30, env=env,
+        cwd=BACKEND_DIR,
     )
     if res.returncode != 0:
         raise RuntimeError(f"Move application failed: {res.stderr[-500:]}")
@@ -253,27 +266,34 @@ def apply_moves_verify(initial: List[str], moves: List[str]) -> bool:
     Uses a single subprocess call for efficiency.
     """
     import json as _json
-    initial_str = state_to_solver_string(initial)
-    moves_json = _json.dumps(moves)  # properly quoted JSON – handles prime chars
-    # json.dumps uses only double-quotes so embedding in a single-quoted string is safe
-    script = f"""
-import sys, json
+    import os as _os
+    # Pass moves as JSON via environment variable – avoids quoting issues with
+    # prime characters (e.g. "Rw'") when the list is embedded in script source.
+    script = """
+import sys, json, os
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
-state_str = "{initial_str}"
+state_str = os.environ["CUBE_STATE"]
 cube = RubiksCube444(state_str, "ULFRBD")
-moves = json.loads('{moves_json}')
+moves = json.loads(os.environ["CUBE_MOVES"])
 for m in moves:
     cube.rotate(m)
 
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state]
+# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
+face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+result = [face_to_color[c] for c in cube.state[1:]]
 solved = ["W"]*16 + ["O"]*16 + ["G"]*16 + ["R"]*16 + ["B"]*16 + ["Y"]*16
 print(json.dumps(result == solved))
 """
+    env = {
+        **_os.environ,
+        "CUBE_STATE": state_to_solver_string(initial),
+        "CUBE_MOVES": _json.dumps(moves),
+    }
     res = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, env=env,
+        cwd=BACKEND_DIR,
     )
     if res.returncode != 0:
         log.warning("Verification subprocess failed: %s", res.stderr[-300:])
@@ -285,27 +305,33 @@ print(json.dumps(result == solved))
 def apply_scramble(scramble: str) -> List[str]:
     """Apply a scramble string to a solved cube and return the resulting state."""
     import json as _json
-    initial_str = state_to_solver_string(SOLVED_STATE)
-    moves_list = scramble.strip().split()
-    moves_json = _json.dumps(moves_list)  # properly quoted JSON – handles prime chars
-    # json.dumps uses only double-quotes so embedding in a single-quoted string is safe
-    script = f"""
-import sys, json
+    import os as _os
+    # Pass moves as JSON via environment variable – avoids quoting issues with
+    # prime characters (e.g. "Rw'") when the list is embedded in script source.
+    script = """
+import sys, json, os
 from rubikscubennnsolver.RubiksCube444 import RubiksCube444
 
-state_str = "{initial_str}"
+state_str = os.environ["CUBE_STATE"]
 cube = RubiksCube444(state_str, "ULFRBD")
-moves = json.loads('{moves_json}')
+moves = json.loads(os.environ["CUBE_MOVES"])
 for m in moves:
     cube.rotate(m)
 
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state]
+# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
+face_to_color = {"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}
+result = [face_to_color[c] for c in cube.state[1:]]
 print(json.dumps(result))
 """
+    env = {
+        **_os.environ,
+        "CUBE_STATE": state_to_solver_string(SOLVED_STATE),
+        "CUBE_MOVES": _json.dumps(scramble.strip().split()),
+    }
     res = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=30, env=env,
+        cwd=BACKEND_DIR,
     )
     if res.returncode != 0:
         raise RuntimeError(f"Scramble failed: {res.stderr[-500:]}")

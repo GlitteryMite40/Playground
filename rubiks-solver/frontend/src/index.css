@@ -331,6 +331,18 @@ twisty-player {
   background: rgba(255,255,255,0.12);
 }
 
+/* Scrubber bar */
+.scrubber-wrapper {
+  margin-bottom: 14px;
+}
+.timeline-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 6px;
+  border-radius: 3px;
+}
+
 /* Playback controls */
 .playback-controls {
   display: flex;

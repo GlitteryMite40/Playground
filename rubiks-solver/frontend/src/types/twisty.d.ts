@@ -10,11 +10,13 @@ declare module "react" {
           puzzle?: string;
           alg?: string;
           "experimental-setup-alg"?: string;
+          "experimental-setup-anchor"?: string;
           visualization?: string;
           "camera-latitude"?: string | number;
           "camera-longitude"?: string | number;
           "back-view"?: string;
           "control-panel"?: string;
+          background?: string;
           "tempo-scale"?: string | number;
         },
         HTMLElement

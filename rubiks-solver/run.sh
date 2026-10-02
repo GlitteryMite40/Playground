@@ -42,12 +42,17 @@ pip install --quiet -r requirements.txt
 # Install the NxNxN solver from a git clone (pip install from git URL does not
 # support --no-build-isolation, which is required for the pinned setuptools).
 if ! python3 -c "import rubikscubennnsolver" 2>/dev/null; then
-    info "Cloning rubiks-cube-NxNxN-solver…"
     SOLVER_DIR="$ROOT/rubiks-cube-NxNxN-solver"
-    if [ ! -d "$SOLVER_DIR" ]; then
+    # Only clone when setup.py is absent (avoids re-cloning a partial or
+    # empty directory that might exist as a stale git submodule stub).
+    if [ ! -f "$SOLVER_DIR/setup.py" ]; then
+        info "Cloning rubiks-cube-NxNxN-solver…"
+        rm -rf "$SOLVER_DIR"
         git clone --depth 1 \
             https://github.com/dwalton76/rubiks-cube-NxNxN-solver \
             "$SOLVER_DIR"
+    else
+        info "Solver source already present at $SOLVER_DIR"
     fi
     info "Installing solver (--no-build-isolation)…"
     pip install --quiet --no-build-isolation "$SOLVER_DIR"
