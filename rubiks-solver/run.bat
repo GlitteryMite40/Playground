@@ -1,17 +1,31 @@
 @echo off
 REM run.bat  –  Windows launcher for 4x4 Rubik's Cube Solver
 REM Usage: run.bat (from the rubiks-solver directory)
+REM
+REM  *** IMPORTANT: The NxNxN solver is Linux-oriented. ***
+REM  It uses wget and gunzip to download lookup tables from S3, and builds
+REM  C extensions.  On Windows, run the backend inside WSL2 or Docker instead
+REM  (see backend/Dockerfile and docker-compose.yml at the repo root).
+REM  This script sets up only the frontend on Windows; run the backend
+REM  separately under WSL2 or via: docker compose up backend
 
 SET ROOT=%~dp0
 SET BACKEND=%ROOT%backend
 SET FRONTEND=%ROOT%frontend
 
-echo [run.bat] Setting up Python virtual environment...
+REM ── Backend setup (requires Python 3.11; solver pins setuptools==49.2.0) ────
+echo [run.bat] Setting up Python 3.11 virtual environment...
 cd /d "%BACKEND%"
 
 IF NOT EXIST ".venv" (
-    python -m venv .venv
-    echo [run.bat] Created .venv
+    py -3.11 -m venv .venv
+    IF ERRORLEVEL 1 (
+        echo [run.bat] ERROR: Python 3.11 not found. Install it from python.org.
+        echo [run.bat] Alternatively, use WSL2 or Docker (see backend/Dockerfile).
+        pause
+        exit /b 1
+    )
+    echo [run.bat] Created .venv (Python 3.11)
 )
 
 CALL .venv\Scripts\activate.bat
@@ -21,8 +35,12 @@ pip install -q -r requirements.txt
 
 python -c "import rubikscubennnsolver" 2>NUL
 IF ERRORLEVEL 1 (
-    echo [run.bat] Installing rubiks-cube-NxNxN-solver...
-    pip install -q "git+https://github.com/dwalton76/rubiks-cube-NxNxN-solver.git"
+    echo [run.bat] Cloning rubiks-cube-NxNxN-solver...
+    IF NOT EXIST "%ROOT%rubiks-cube-NxNxN-solver" (
+        git clone --depth 1 https://github.com/dwalton76/rubiks-cube-NxNxN-solver "%ROOT%rubiks-cube-NxNxN-solver"
+    )
+    echo [run.bat] Installing solver (--no-build-isolation)...
+    pip install -q --no-build-isolation "%ROOT%rubiks-cube-NxNxN-solver"
     echo [run.bat] Solver installed.
 )
 
@@ -40,6 +58,7 @@ START "Frontend" cmd /k "npm run dev"
 
 echo.
 echo [run.bat] Servers starting. Open http://localhost:5173 in your browser.
-echo [run.bat] NOTE: First solve will download ~50MB of lookup tables (2-5 min).
+echo [run.bat] NOTE: First solve downloads lookup tables (sizes vary; may be
+echo [run.bat]       several hundred MB). This can take several minutes.
 echo [run.bat] Close the two server windows to stop.
 pause

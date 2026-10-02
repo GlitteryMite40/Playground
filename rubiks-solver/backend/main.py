@@ -7,7 +7,8 @@ Endpoints:
   GET  /health  – liveness probe
 
 Solver: rubiks-cube-NxNxN-solver by dwalton76
-  pip install git+https://github.com/dwalton76/rubiks-cube-NxNxN-solver.git
+  git clone https://github.com/dwalton76/rubiks-cube-NxNxN-solver
+  pip install --no-build-isolation ./rubiks-cube-NxNxN-solver  (Python 3.11 venv)
 
 State format (both request and response):
   96-element list of single-char color codes in ULFRBD face order (16 per face).
@@ -175,7 +176,7 @@ def run_solver(state_str: str) -> str:
     """
     Call the rubikscubennnsolver as a Python sub-process so that its
     sys.exit() calls and first-run table-download don't kill our server.
-    Returns the raw solution string.
+    Returns the solution string (space-joined WCA moves).
     """
     script = f"""
 import sys
@@ -190,7 +191,10 @@ order = "ULFRBD"
 cube = RubiksCube444(state, order)
 cube.solve()
 
-print(cube.solution_to_string())
+# cube.solution is a list of move strings; entries starting with "COMMENT"
+# are informational annotations, not moves – drop them before joining.
+moves = [m for m in cube.solution if not m.startswith("COMMENT")]
+print(" ".join(moves))
 sys.stdout.flush()
 """
     log.info("Launching solver subprocess…")

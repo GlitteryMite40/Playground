@@ -1,0 +1,29 @@
+# docker-compose.yml
+#
+# Starts the Rubik's Cube Solver backend in Docker.
+#
+# Usage:
+#   docker compose up          # start (builds image on first run)
+#   docker compose up --build  # rebuild after code changes
+#
+# The lookup-table volume (~/.rubiks-cube-lookup-tables) is mounted so that
+# tables downloaded on the first solve persist across container restarts.
+# Table sizes vary; the first solve may download several hundred MB.
+#
+# Frontend: run separately with `npm run dev` in rubiks-solver/frontend/
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist solver lookup tables between container restarts.
+      # On Linux/macOS the host path is ~/.rubiks-cube-lookup-tables.
+      # On Windows (Docker Desktop) use a named volume or adjust the path.
+      - "${HOME}/.rubiks-cube-lookup-tables:/root/.rubiks-cube-lookup-tables"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
