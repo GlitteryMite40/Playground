@@ -192,176 +192,64 @@ def state_to_solver_string(state: List[str]) -> str:
     return "".join(COLOR_TO_FACE[c] for c in state)
 
 
+FACE_TO_COLOR: dict[str, str] = {
+    "U": "W",
+    "L": "O",
+    "F": "G",
+    "R": "R",
+    "B": "B",
+    "D": "Y",
+}
+
+
 def run_solver(state_str: str) -> str:
     """
-    Call the rubikscubennnsolver as a Python sub-process so that its
-    sys.exit() calls and first-run table-download don't kill our server.
+    Solve the 4x4 Rubik's cube using pure in-memory reduction solver.
     Returns the solution string (space-joined WCA moves).
     """
-    script = f"""
-import sys, os
-from pathlib import Path
-backend_dir = r"{BACKEND_DIR}"
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-import logging
-logging.basicConfig(level=logging.WARNING)
-
-from rubikscubennnsolver.RubiksCube444 import RubiksCube444
-
-state = "{state_str}"
-order = "ULFRBD"
-
-cube = RubiksCube444(state, order)
-cube.solve()
-
-# cube.solution is a list of move strings; entries starting with "COMMENT"
-# are informational annotations, not moves – drop them before joining.
-moves = [m for m in cube.solution if not m.startswith("COMMENT")]
-print(" ".join(moves))
-sys.stdout.flush()
-"""
-    log.info("Launching solver subprocess…")
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        timeout=600,  # 10 min – first run downloads tables
-        cwd=BACKEND_DIR,
-        env=get_subprocess_env(),
-    )
-    if result.returncode != 0:
-        stderr_tail = result.stderr[-2000:] if result.stderr else ""
-        log.error("Solver stderr:\n%s", stderr_tail)
-        raise RuntimeError(f"Solver failed: {stderr_tail}")
-
-    solution = result.stdout.strip()
-    if not solution:
-        # Some versions print to stderr on success; fall back
-        solution = result.stderr.strip().split("\n")[-1]
-    log.info("Raw solver output: %s", solution[:200])
+    from reduction_solver import solve_444
+    log.info("Running in-memory reduction solver...")
+    moves = solve_444(state_str)
+    solution = " ".join(moves)
+    log.info("Solver output (%d moves): %s", len(moves), solution[:120])
     return solution
 
 
 def apply_move_to_state(state: List[str], move: str) -> List[str]:
     """
-    Apply a single WCA move to a 96-sticker state list by invoking the
-    solver library's move application logic via subprocess.
+    Apply a single WCA move to a 96-sticker state list.
     Returns the new state list.
     """
-    # Pass move via environment variable to avoid quoting issues with
-    # prime-move strings like "Rw'" inside f-string script source.
-    script = f"""
-import sys, json, os
-from pathlib import Path
-backend_dir = r"{BACKEND_DIR}"
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from rubikscubennnsolver.RubiksCube444 import RubiksCube444
-
-state_str = os.environ["CUBE_STATE"]
-cube = RubiksCube444(state_str, "ULFRBD")
-cube.rotate(os.environ["CUBE_MOVE"])
-
-# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state[1:]]
-print(json.dumps(result))
-"""
-    env = get_subprocess_env({"CUBE_STATE": state_to_solver_string(state), "CUBE_MOVE": move})
-    res = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=30, env=env,
-        cwd=BACKEND_DIR,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(f"Move application failed: {res.stderr[-500:]}")
-    import json
-    return json.loads(res.stdout.strip())
+    from rubikscubennnsolver.RubiksCube444 import RubiksCube444
+    cube = RubiksCube444(state_to_solver_string(state), "ULFRBD")
+    cube.rotate(move)
+    return [FACE_TO_COLOR[c] for c in cube.state[1:]]
 
 
 def apply_moves_verify(initial: List[str], moves: List[str]) -> bool:
     """
     Verify the solution is correct by applying all moves to the initial state
     and checking that the result is solved.
-    Uses a single subprocess call for efficiency.
     """
-    import json as _json
-    # Pass moves as JSON via environment variable – avoids quoting issues with
-    # prime characters (e.g. "Rw'") when the list is embedded in script source.
-    script = f"""
-import sys, json, os
-from pathlib import Path
-backend_dir = r"{BACKEND_DIR}"
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from rubikscubennnsolver.RubiksCube444 import RubiksCube444
-
-state_str = os.environ["CUBE_STATE"]
-cube = RubiksCube444(state_str, "ULFRBD")
-moves = json.loads(os.environ["CUBE_MOVES"])
-for m in moves:
-    cube.rotate(m)
-
-# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state[1:]]
-solved = ["W"]*16 + ["O"]*16 + ["G"]*16 + ["R"]*16 + ["B"]*16 + ["Y"]*16
-print(json.dumps(result == solved))
-"""
-    env = get_subprocess_env({
-        "CUBE_STATE": state_to_solver_string(initial),
-        "CUBE_MOVES": _json.dumps(moves),
-    })
-    res = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=60, env=env,
-        cwd=BACKEND_DIR,
-    )
-    if res.returncode != 0:
-        log.warning("Verification subprocess failed: %s", res.stderr[-300:])
+    try:
+        from rubikscubennnsolver.RubiksCube444 import RubiksCube444
+        cube = RubiksCube444(state_to_solver_string(initial), "ULFRBD")
+        for m in moves:
+            cube.rotate(m)
+        result = [FACE_TO_COLOR[c] for c in cube.state[1:]]
+        return result == SOLVED_STATE
+    except Exception as exc:
+        log.warning("Verification error: %s", exc)
         return False
-    import json
-    return json.loads(res.stdout.strip())
 
 
 def apply_scramble(scramble: str) -> List[str]:
     """Apply a scramble string to a solved cube and return the resulting state."""
-    import json as _json
-    # Pass moves as JSON via environment variable – avoids quoting issues with
-    # prime characters (e.g. "Rw'") when the list is embedded in script source.
-    script = f"""
-import sys, json, os
-from pathlib import Path
-backend_dir = r"{BACKEND_DIR}"
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-from rubikscubennnsolver.RubiksCube444 import RubiksCube444
-
-state_str = os.environ["CUBE_STATE"]
-cube = RubiksCube444(state_str, "ULFRBD")
-moves = json.loads(os.environ["CUBE_MOVES"])
-for m in moves:
-    cube.rotate(m)
-
-# cube.state has a dummy "x" at index 0; real stickers are state[1:97]
-face_to_color = {{"U":"W","L":"O","F":"G","R":"R","B":"B","D":"Y"}}
-result = [face_to_color[c] for c in cube.state[1:]]
-print(json.dumps(result))
-"""
-    env = get_subprocess_env({
-        "CUBE_STATE": state_to_solver_string(SOLVED_STATE),
-        "CUBE_MOVES": _json.dumps(scramble.strip().split()),
-    })
-    res = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=30, env=env,
-        cwd=BACKEND_DIR,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(f"Scramble failed: {res.stderr[-500:]}")
-    import json
-    return json.loads(res.stdout.strip())
+    from rubikscubennnsolver.RubiksCube444 import RubiksCube444
+    cube = RubiksCube444(state_to_solver_string(SOLVED_STATE), "ULFRBD")
+    for m in scramble.strip().split():
+        cube.rotate(m)
+    return [FACE_TO_COLOR[c] for c in cube.state[1:]]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -388,13 +276,17 @@ def demo():
 def solve(req: SolveRequest):
     """
     Validate the cube state, solve it, verify the solution, and return it.
-
-    First-run note: rubikscubennnsolver will download its lookup tables
-    (~50 MB) to ~/.rubiks-cube-lookup-tables/ on the first invocation.
-    The solver subprocess will take several minutes the first time.
-    Subsequent runs are fast (seconds).
     """
     log.info("Received solve request")
+
+    if req.state == SOLVED_STATE:
+        log.info("Cube is already in solved state")
+        return SolveResponse(
+            solution="",
+            moves=[],
+            move_count=0,
+            verified=True,
+        )
 
     solver_str = state_to_solver_string(req.state)
     log.info("Solver input string (first 48 chars): %s", solver_str[:48])
@@ -404,16 +296,20 @@ def solve(req: SolveRequest):
     except subprocess.TimeoutExpired:
         raise HTTPException(
             status_code=504,
-            detail=(
-                "Solver timed out (10 min). This usually means the lookup tables "
-                "are still downloading. Check the server logs and retry."
-            ),
+            detail="Solver timed out.",
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     moves = normalize_solution(raw_solution)
     if not moves:
+        if req.state == SOLVED_STATE:
+            return SolveResponse(
+                solution="",
+                moves=[],
+                move_count=0,
+                verified=True,
+            )
         raise HTTPException(status_code=500, detail="Solver returned empty solution")
 
     solution_str = " ".join(moves)
@@ -428,7 +324,7 @@ def solve(req: SolveRequest):
                 status_code=500,
                 detail="Solution verification failed – the solver returned an incorrect solution.",
             )
-        log.info("Solution verified ✓")
+        log.info("Solution verified [OK]")
     except HTTPException:
         raise
     except Exception as exc:

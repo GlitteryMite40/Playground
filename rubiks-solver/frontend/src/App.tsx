@@ -49,10 +49,14 @@ export default function App() {
 
   async function handleSolve() {
     setSolving(true);
-    setStatus({ type: "info", msg: "Sending to solver… This may take 1–3 minutes on first run while lookup tables download." });
+    setStatus({ type: "info", msg: "Solving cube in memory…" });
     try {
       const arr = stateToArray(cubeState);
       const resp = await solveCube(arr);
+      if (resp.moves.length === 0) {
+        setStatus({ type: "success", msg: "Cube is already solved! No moves needed." });
+        return;
+      }
       const setupAlg = invertMoves(resp.moves);
       setSolution({ moves: resp.moves, setupAlg });
       setStatus({ type: "success", msg: `Solved in ${resp.moves.length} moves!` });
